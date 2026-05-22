@@ -31,7 +31,12 @@ dtb-$(CONFIG_EXYNOS7420) += exynos7420-espresso7420.dtb
 dtb-$(CONFIG_TARGET_A5Y17LTE) += exynos78x0-axy17lte.dtb
 dtb-$(CONFIG_TARGET_A3Y17LTE) += exynos78x0-axy17lte.dtb
 dtb-$(CONFIG_TARGET_A7Y17LTE) += exynos78x0-axy17lte.dtb
-dtb-$(CONFIG_TARGET_EXYNOS_MOBILE) += zumapro-komodo.dtb
+dtb-$(CONFIG_TARGET_EXYNOS_MOBILE) += \
+	zumapro-caiman.dtb \
+	zumapro-comet.dtb \
+	zumapro-komodo.dtb \
+	zumapro-tegu.dtb \
+	zumapro-tokay.dtb \
 
 dtb-$(CONFIG_ARCH_DAVINCI) += \
 	da850-lcdk.dtb \

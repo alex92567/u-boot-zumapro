@@ -192,8 +192,16 @@ static bool exynos_is_google_zumapro(void)
 	ofnode root = ofnode_root();
 
 	return ofnode_device_is_compatible(root, "google,zumapro") ||
+	       ofnode_device_is_compatible(root, "google,zumapro-caiman") ||
+	       ofnode_device_is_compatible(root, "google,zumapro-comet") ||
 	       ofnode_device_is_compatible(root, "google,zumapro-komodo") ||
-	       ofnode_device_is_compatible(root, "google,komodo");
+	       ofnode_device_is_compatible(root, "google,zumapro-tegu") ||
+	       ofnode_device_is_compatible(root, "google,zumapro-tokay") ||
+	       ofnode_device_is_compatible(root, "google,caiman") ||
+	       ofnode_device_is_compatible(root, "google,comet") ||
+	       ofnode_device_is_compatible(root, "google,komodo") ||
+	       ofnode_device_is_compatible(root, "google,tegu") ||
+	       ofnode_device_is_compatible(root, "google,tokay");
 }
 
 static void exynos_google_zumapro_early_init(void)

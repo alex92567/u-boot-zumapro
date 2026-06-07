@@ -19,8 +19,11 @@
 #include <linux/sizes.h>
 #include <lmb.h>
 #include <part.h>
+#include <scsi.h>
+#include <stdio.h>
 #include <stdbool.h>
 #include <string.h>
+#include <ufs.h>
 
 DECLARE_GLOBAL_DATA_PTR;
 
@@ -146,15 +149,30 @@ static const char *exynos_prev_bl_get_bootargs(void)
 	return bootargs_prop->data;
 }
 
-static void exynos_parse_dram_banks(const void *fdt_base)
+static const void *exynos_get_prev_bl_fdt(void)
+{
+	phys_addr_t prev_bl_fdt_addr = get_prev_bl_fdt_addr();
+	const void *prev_bl_fdt_base = (const void *)prev_bl_fdt_addr;
+
+	if (!prev_bl_fdt_addr || !IS_ALIGNED(prev_bl_fdt_addr, 8))
+		return NULL;
+
+	if (fdt_check_header(prev_bl_fdt_base) < 0)
+		return NULL;
+
+	return prev_bl_fdt_base;
+}
+
+static int exynos_parse_dram_banks(const void *fdt_base)
 {
 	u64 mem_addr, mem_size = 0;
 	u32 na, ns, i;
 	int index = EXYNOS_STATIC_MAP_COUNT;
+	int bank_count = 0;
 	int offset;
 
 	if (fdt_check_header(fdt_base) < 0)
-		return;
+		return -EINVAL;
 
 	/* #address-cells and #size-cells as defined in the fdt root. */
 	na = fdt_address_cells(fdt_base, 0);
@@ -165,7 +183,7 @@ static void exynos_parse_dram_banks(const void *fdt_base)
 			continue;
 
 		for (i = 0; ; i++) {
-			if (index > CONFIG_NR_DRAM_BANKS)
+			if (index >= EXYNOS_STATIC_MAP_COUNT + CONFIG_NR_DRAM_BANKS)
 				break;
 
 			mem_addr = fdtdec_get_addr_size_fixed(fdt_base, offset,
@@ -183,25 +201,18 @@ static void exynos_parse_dram_banks(const void *fdt_base)
 			mem_map[index].attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL) |
 					       PTE_BLOCK_INNER_SHARE;
 			index++;
+			bank_count++;
 		}
 	}
+
+	return bank_count ? 0 : -ENOENT;
 }
 
 static bool exynos_is_google_zumapro(void)
 {
 	ofnode root = ofnode_root();
 
-	return ofnode_device_is_compatible(root, "google,zumapro") ||
-	       ofnode_device_is_compatible(root, "google,zumapro-caiman") ||
-	       ofnode_device_is_compatible(root, "google,zumapro-comet") ||
-	       ofnode_device_is_compatible(root, "google,zumapro-komodo") ||
-	       ofnode_device_is_compatible(root, "google,zumapro-tegu") ||
-	       ofnode_device_is_compatible(root, "google,zumapro-tokay") ||
-	       ofnode_device_is_compatible(root, "google,caiman") ||
-	       ofnode_device_is_compatible(root, "google,comet") ||
-	       ofnode_device_is_compatible(root, "google,komodo") ||
-	       ofnode_device_is_compatible(root, "google,tegu") ||
-	       ofnode_device_is_compatible(root, "google,tokay");
+	return ofnode_device_is_compatible(root, "google,zumapro");
 }
 
 static void exynos_google_zumapro_early_init(void)
@@ -309,10 +320,26 @@ static int exynos_blk_env_setup(void)
 	static char dfu_string[32];
 	int i;
 
-	blk_ifname = "mmc";
+	if (CONFIG_IS_ENABLED(UFS)) {
+		int ret;
+
+		ret = ufs_probe();
+		if (ret)
+			return ret;
+
+		ret = scsi_scan(false);
+		if (ret)
+			return ret;
+
+		blk_ifname = "scsi";
+	} else {
+		blk_ifname = "mmc";
+	}
+
 	blk_desc = blk_get_dev(blk_ifname, blk_dev);
 	if (!blk_desc) {
-		log_err("%s: required mmc device not available\n", __func__);
+		log_err("%s: required %s device not available\n", __func__,
+			blk_ifname);
 		return -ENODEV;
 	}
 
@@ -323,8 +350,8 @@ static int exynos_blk_env_setup(void)
 		if (!update_info.dfu_string &&
 		    !strncasecmp(info.name, "boot", strlen("boot"))) {
 			snprintf(dfu_string, sizeof(dfu_string),
-				 "mmc %d=u-boot.bin part %d %d", blk_dev,
-				 blk_dev, i);
+				 "%s %d=u-boot.bin part %d %d", blk_ifname,
+				 blk_dev, blk_dev, i);
 			update_info.dfu_string = dfu_string;
 		}
 
@@ -351,6 +378,8 @@ static int exynos_fastboot_setup(void)
 {
 	struct blk_desc *blk_dev;
 	struct disk_partition info = {0};
+	const char *blk_ifname;
+	int blk_devnum = 0;
 	char buf[128];
 	phys_addr_t addr;
 	int offset, i, j;
@@ -362,9 +391,15 @@ static int exynos_fastboot_setup(void)
 	}
 	env_set_hex("fastboot_addr_r", addr);
 
-	blk_dev = blk_get_dev("mmc", CONFIG_FASTBOOT_FLASH_MMC_DEV);
+	if (CONFIG_IS_ENABLED(UFS))
+		blk_ifname = "scsi";
+	else
+		blk_ifname = "mmc";
+
+	blk_dev = blk_get_dev(blk_ifname, blk_devnum);
 	if (!blk_dev) {
-		log_err("%s: required mmc device not available\n", __func__);
+		log_err("%s: required %s device not available\n", __func__,
+			blk_ifname);
 		return -ENODEV;
 	}
 
@@ -396,9 +431,11 @@ static int exynos_fastboot_setup(void)
 
 int board_fdt_blob_setup(void **fdtp)
 {
+	const void *prev_bl_fdt = exynos_get_prev_bl_fdt();
+
 	/* If internal FDT is not available, use the external FDT instead. */
-	if (fdt_check_header(*fdtp))
-		*fdtp = (void *)get_prev_bl_fdt_addr();
+	if (fdt_check_header(*fdtp) && prev_bl_fdt)
+		*fdtp = (void *)prev_bl_fdt;
 
 	return 0;
 }
@@ -421,10 +458,15 @@ int timer_init(void)
 
 int board_early_init_f(void)
 {
-	if (exynos_is_google_zumapro())
-		exynos_google_zumapro_early_init();
+	const void *prev_bl_fdt;
 
-	exynos_parse_dram_banks(gd->fdt_blob);
+	if (exynos_is_google_zumapro()) {
+		exynos_google_zumapro_early_init();
+	}
+
+	prev_bl_fdt = exynos_get_prev_bl_fdt();
+	if (!prev_bl_fdt || exynos_parse_dram_banks(prev_bl_fdt))
+		exynos_parse_dram_banks(gd->fdt_blob);
 
 	return 0;
 }

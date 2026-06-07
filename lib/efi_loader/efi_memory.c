@@ -461,8 +461,14 @@ efi_status_t efi_allocate_pages(enum efi_allocate_type type,
 	switch (type) {
 	case EFI_ALLOCATE_ANY_PAGES:
 		/* Any page */
-		err = lmb_alloc_mem(LMB_MEM_ALLOC_ANY, EFI_PAGE_SIZE, &addr,
-				    len, flags);
+		if (CONFIG_IS_ENABLED(TARGET_EXYNOS_MOBILE) && gd->ram_top) {
+			addr = gd->ram_top;
+			err = lmb_alloc_mem(LMB_MEM_ALLOC_MAX, EFI_PAGE_SIZE,
+					    &addr, len, flags);
+		} else {
+			err = lmb_alloc_mem(LMB_MEM_ALLOC_ANY, EFI_PAGE_SIZE,
+					    &addr, len, flags);
+		}
 		if (err)
 			return EFI_OUT_OF_RESOURCES;
 		break;
@@ -942,4 +948,3 @@ int efi_map_update_notify(phys_addr_t addr, phys_size_t size,
 
 	return 0;
 }
-

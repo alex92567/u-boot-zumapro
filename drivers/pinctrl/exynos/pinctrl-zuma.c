@@ -8,6 +8,7 @@
 
 #include <dm.h>
 #include <dm/pinctrl.h>
+#include <clk.h>
 #include "pinctrl-exynos.h"
 
 #define ZUMA_PIN_BANK(pins, reg, id)		\
@@ -227,6 +228,8 @@ static int zuma_pinctrl_probe(struct udevice *dev)
 	struct exynos_pinctrl_priv *priv = dev_get_priv(dev);
 	const struct samsung_pin_ctrl *pin_ctrl;
 	fdt_addr_t base;
+	struct clk clk;
+	int ret;
 
 	if (!priv)
 		return -EINVAL;
@@ -238,6 +241,13 @@ static int zuma_pinctrl_probe(struct udevice *dev)
 	pin_ctrl = zuma_get_pin_ctrl(base);
 	if (!pin_ctrl)
 		return -ENODEV;
+
+	ret = clk_get_by_index(dev, 0, &clk);
+	if (!ret) {
+		ret = clk_enable(&clk);
+		if (ret)
+			return ret;
+	}
 
 	priv->base = base;
 	priv->pin_ctrl = pin_ctrl;

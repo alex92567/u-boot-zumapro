@@ -14,10 +14,13 @@
 #include <stdio_dev.h>
 #include <time.h>
 #include <input.h>
+#include <asm/global_data.h>
 #ifdef CONFIG_DM_KEYBOARD
 #include <keyboard.h>
 #endif
 #include <linux/input.h>
+
+DECLARE_GLOBAL_DATA_PTR;
 
 enum {
 	/* These correspond to the lights on the keyboard */
@@ -671,6 +674,15 @@ int input_stdio_register(struct stdio_dev *dev)
 	error = stdio_register(dev);
 
 	if (!CONFIG_IS_ENABLED(ENV_SUPPORT))
+		return 0;
+
+	/*
+	 * During stdio_add_devices(), keyboard devices are still being probed
+	 * before console_init_r() has built the final stdio/iomux state. Let
+	 * console_init_r() assign stdin from the environment instead of
+	 * starting the keyboard recursively from inside its own probe.
+	 */
+	if (!(gd->flags & GD_FLG_DEVINIT))
 		return 0;
 
 	if (!error) {

@@ -36,7 +36,7 @@ dtb-$(CONFIG_TARGET_EXYNOS_MOBILE) += \
 	zumapro-comet.dtb \
 	zumapro-komodo.dtb \
 	zumapro-tegu.dtb \
-	zumapro-tokay.dtb \
+	zumapro-tokay.dtb
 
 dtb-$(CONFIG_ARCH_DAVINCI) += \
 	da850-lcdk.dtb \

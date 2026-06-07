@@ -2,6 +2,7 @@
 /*
  * Pixel 9a (tegu) Device Tree
  *
+ * Copyright 2025 Trijal Saha - <trijalsaha2012@gmail.com>
  */
 
 /dts-v1/;

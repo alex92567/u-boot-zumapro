@@ -18,7 +18,6 @@
 / {
 	aliases {
 		serial0 = &serial_0;
-		display0 = &framebuffer0;
 	};
 
 	chosen {
@@ -27,8 +26,8 @@
 		ranges;
 
 		/* Bootloader expects bootargs specified otherwise it crashes */
-		bootargs = "console=tty0 fbcon=map:0 keep_bootcon loglevel=8 panic=20 clk_ignore_unused pd_ignore_unused";
-		stdout-path = "display0";
+		bootargs = "console=tty0 loglevel=8";
+		stdout-path = &serial_0;
 
 		/* Use display framebuffer as setup by bootloader */
 		framebuffer0: framebuffer@fac00000 {

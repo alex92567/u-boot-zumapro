@@ -57,7 +57,7 @@ struct efi_capsule_update_info update_info = {
  * peripheral block, and a sentinel at the end. This is filled in
  * dynamically.
  */
-static struct mm_region exynos_mem_map[CONFIG_NR_DRAM_BANKS + 5] = {
+static struct mm_region exynos_mem_map[CONFIG_NR_DRAM_BANKS + 6] = {
 	{
 		/* Peripheral MMIO block */
 		.virt = 0x10000000UL,
@@ -86,7 +86,7 @@ static struct mm_region exynos_mem_map[CONFIG_NR_DRAM_BANKS + 5] = {
 		.virt = ZUMAPRO_SIMPLEFB_BASE,
 		.phys = ZUMAPRO_SIMPLEFB_BASE,
 		.size = ZUMAPRO_SIMPLEFB_SIZE,
-		.attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL) |
+		.attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL_NC) |
 			 PTE_BLOCK_INNER_SHARE,
 	},
 };
@@ -94,6 +94,64 @@ static struct mm_region exynos_mem_map[CONFIG_NR_DRAM_BANKS + 5] = {
 struct mm_region *mem_map = exynos_mem_map;
 
 #define EXYNOS_STATIC_MAP_COUNT 4
+#define EXYNOS_DRAM_MAP_COUNT (CONFIG_NR_DRAM_BANKS + 1)
+
+static bool exynos_is_google_zumapro(void);
+
+phys_addr_t board_get_usable_ram_top(phys_size_t total_size)
+{
+	if (exynos_is_google_zumapro() && gd->ram_top > ZUMAPRO_SIMPLEFB_BASE)
+		return ZUMAPRO_SIMPLEFB_BASE;
+
+	return gd->ram_top;
+}
+
+static int exynos_add_dram_map(int *index, int *bank_count,
+			       phys_addr_t start, phys_size_t size)
+{
+	if (!size)
+		return 0;
+
+	if (*index >= EXYNOS_STATIC_MAP_COUNT + EXYNOS_DRAM_MAP_COUNT)
+		return -ENOSPC;
+
+	mem_map[*index].phys = start;
+	mem_map[*index].virt = start;
+	mem_map[*index].size = size;
+	mem_map[*index].attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL) |
+				PTE_BLOCK_INNER_SHARE;
+
+	(*index)++;
+	(*bank_count)++;
+
+	return 0;
+}
+
+static int exynos_add_dram_map_excluding_simplefb(int *index, int *bank_count,
+						  phys_addr_t start,
+						  phys_size_t size)
+{
+	const phys_addr_t end = start + size;
+	const phys_addr_t fb_start = ZUMAPRO_SIMPLEFB_BASE;
+	const phys_addr_t fb_end = fb_start + ZUMAPRO_SIMPLEFB_SIZE;
+	int ret;
+
+	if (end <= fb_start || start >= fb_end)
+		return exynos_add_dram_map(index, bank_count, start, size);
+
+	if (start < fb_start) {
+		ret = exynos_add_dram_map(index, bank_count, start,
+					  fb_start - start);
+		if (ret)
+			return ret;
+	}
+
+	if (end > fb_end)
+		return exynos_add_dram_map(index, bank_count, fb_end,
+					   end - fb_end);
+
+	return 0;
+}
 
 static bool exynos_addr_in_dram(phys_addr_t addr, ulong size)
 {
@@ -170,6 +228,7 @@ static int exynos_parse_dram_banks(const void *fdt_base)
 	int index = EXYNOS_STATIC_MAP_COUNT;
 	int bank_count = 0;
 	int offset;
+	int ret;
 
 	if (fdt_check_header(fdt_base) < 0)
 		return -EINVAL;
@@ -183,7 +242,7 @@ static int exynos_parse_dram_banks(const void *fdt_base)
 			continue;
 
 		for (i = 0; ; i++) {
-			if (index >= EXYNOS_STATIC_MAP_COUNT + CONFIG_NR_DRAM_BANKS)
+			if (index >= EXYNOS_STATIC_MAP_COUNT + EXYNOS_DRAM_MAP_COUNT)
 				break;
 
 			mem_addr = fdtdec_get_addr_size_fixed(fdt_base, offset,
@@ -195,13 +254,12 @@ static int exynos_parse_dram_banks(const void *fdt_base)
 			if (!mem_size)
 				continue;
 
-			mem_map[index].phys = mem_addr;
-			mem_map[index].virt = mem_addr;
-			mem_map[index].size = mem_size;
-			mem_map[index].attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL) |
-					       PTE_BLOCK_INNER_SHARE;
-			index++;
-			bank_count++;
+			ret = exynos_add_dram_map_excluding_simplefb(&index,
+								     &bank_count,
+								     mem_addr,
+								     mem_size);
+			if (ret)
+				return ret;
 		}
 	}
 
@@ -459,14 +517,15 @@ int timer_init(void)
 int board_early_init_f(void)
 {
 	const void *prev_bl_fdt;
+	int ret;
 
-	if (exynos_is_google_zumapro()) {
+	if (exynos_is_google_zumapro())
 		exynos_google_zumapro_early_init();
-	}
 
 	prev_bl_fdt = exynos_get_prev_bl_fdt();
-	if (!prev_bl_fdt || exynos_parse_dram_banks(prev_bl_fdt))
-		exynos_parse_dram_banks(gd->fdt_blob);
+	ret = prev_bl_fdt ? exynos_parse_dram_banks(prev_bl_fdt) : -ENOENT;
+	if (ret)
+		ret = exynos_parse_dram_banks(gd->fdt_blob);
 
 	return 0;
 }

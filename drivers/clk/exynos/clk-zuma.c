@@ -1937,6 +1937,15 @@ static const struct samsung_cmu_info apm_cmu_info  = {
 	.memclk_offset		= GS101_MEMCLK_OFFSET,
 };
 
+static const struct samsung_clk_group apm_cmu_clks[] = {
+	{ S_CLK_FRATE, apm_fixed_clks, ARRAY_SIZE(apm_fixed_clks) },
+	{ S_CLK_MUX, apm_mux_clks, ARRAY_SIZE(apm_mux_clks) },
+	{ S_CLK_GATE, &apm_gate_clks[4], 1 },
+	{ S_CLK_DIV, apm_div_clks, ARRAY_SIZE(apm_div_clks) },
+	{ S_CLK_GATE, apm_gate_clks, 4 },
+	{ S_CLK_GATE, &apm_gate_clks[5], ARRAY_SIZE(apm_gate_clks) - 5 },
+};
+
 /* ---- CMU_DPU ------------------------------------------------------------- */
 
 /* Register Offset definitions for CMU_DPUB (0x19400000) */
@@ -4545,6 +4554,10 @@ static int zuma_cmu_probe(struct udevice *dev)
 		return samsung_cmu_register_one(dev, data->cmu_id,
 						top_cmu_clks,
 						ARRAY_SIZE(top_cmu_clks));
+	if (data->cmu_id == CMU_APM)
+		return samsung_cmu_register_one(dev, data->cmu_id,
+						apm_cmu_clks,
+						ARRAY_SIZE(apm_cmu_clks));
 
 	return samsung_cmu_register_from_info(dev, data->cmu_id, data->info);
 }
